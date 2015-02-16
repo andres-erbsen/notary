@@ -278,8 +278,7 @@ Section StepAsync.
                                       ((mark_cevents_src (pDst p) cEvents) ++
                                       (nwCrypto net))
                                       ->
-                     forall them msg, (In (Verify them msg) cEvents) ->
-                     (In (them, Sign msg) (nwCrypto net')) ->
+                     (forall them msg, (In (Verify them msg) cEvents) -> (In (them, Sign msg) (nwCrypto net'))) ->
                      step_m net net' [(pDst p, inr out)]
   (* inject a message (f inp) into host h *)
   | SM_input : forall h net net' out inp d l cEvents,
