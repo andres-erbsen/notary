@@ -33,6 +33,7 @@ Inductive cryptoEvent {name : Type} :=
 | Sign : string -> string -> cryptoEvent
 | Verify : string -> string -> cryptoEvent
 | Leak : string -> cryptoEvent
+| LeakEncrytped : string -> string -> cryptoEvent
 | Random : string -> cryptoEvent
 .
 
@@ -273,6 +274,12 @@ Section StepAsync.
   Definition step_m_init : network :=
     mkNetwork init_handlers [].
 
+  Inductive secret : string -> network -> Prop :=
+  | Secret : forall (v:string) (net:network), 
+    (~ exists them, In (them, Leak v) (nwCrypto net))
+    -> (forall them sk, In (them, LeakEncrytped v sk) (nwCrypto net) -> secret sk net)
+    -> secret v net.
+
   Inductive step_m : step_relation network (name * (input + list output)) :=
   (* just like step_m *)
   | SM_deliver : forall net net' p out d l cEvents,
@@ -282,10 +289,10 @@ Section StepAsync.
                                       ((mark_cevents_src (pDst p) cEvents) ++
                                       (nwCrypto net))
                                       ->
-                     (forall sk msg them, (In (Verify (sigPK sk) msg) cEvents) ->
-                       (In (them, Random sk) (nwCrypto net')) ->
-                       (~ In (them, Leak sk) (nwCrypto net')) ->
-                       (In (them, Sign sk msg) (nwCrypto net'))) ->
+                     (forall sk msg, (In (Verify (sigPK sk) msg) cEvents) ->
+                       secret sk net' ->
+                       (exists them, In (them, Random sk) (nwCrypto net')) ->
+                       (exists them, In (them, Sign sk msg) (nwCrypto net'))) ->
                      step_m net net' [(pDst p, inr out)]
   (* inject a message (f inp) into host h *)
   | SM_input : forall h net net' out inp d l cEvents,
