@@ -17,7 +17,9 @@ Class BaseParams :=
   {
     data : Type;
     input : Type;
-    output : Type
+    output : Type;
+
+    sigPK : string -> string
   }.
 
 
@@ -28,8 +30,10 @@ Class OneNodeParams (P : BaseParams) :=
   }.
 
 Inductive cryptoEvent {name : Type} :=
-| Sign : string -> cryptoEvent
-| Verify : name -> string -> cryptoEvent
+| Sign : string -> string -> cryptoEvent
+| Verify : string -> string -> cryptoEvent
+| Leak : string -> cryptoEvent
+| Random : string -> cryptoEvent
 .
 
 Class MultiParams (P : BaseParams) :=
@@ -278,7 +282,10 @@ Section StepAsync.
                                       ((mark_cevents_src (pDst p) cEvents) ++
                                       (nwCrypto net))
                                       ->
-                     (forall them msg, (In (Verify them msg) cEvents) -> (In (them, Sign msg) (nwCrypto net'))) ->
+                     (forall sk msg them, (In (Verify (sigPK sk) msg) cEvents) ->
+                       (In (them, Random sk) (nwCrypto net')) ->
+                       (~ In (them, Leak sk) (nwCrypto net')) ->
+                       (In (them, Sign sk msg) (nwCrypto net'))) ->
                      step_m net net' [(pDst p, inr out)]
   (* inject a message (f inp) into host h *)
   | SM_input : forall h net net' out inp d l cEvents,

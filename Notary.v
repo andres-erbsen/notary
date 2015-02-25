@@ -8,6 +8,8 @@ Require Import Net.
 Require Import Util.
 
 Section Notary.
+  Parameter secret_key : string.
+  Parameter sigPK : string -> string.
 
   Inductive Name :=
   | Notary : Name
@@ -39,7 +41,9 @@ Section Notary.
     {
       data   := Data ;
       input  := unit ;
-      output := string
+      output := string;
+
+      sigPK := sigPK
     }.
 
   Definition magic : string := "magic".
@@ -48,13 +52,14 @@ Section Notary.
     : (list string * Data * list (Name * string) * list (@cryptoEvent Name))
     :=
     match node with
-    | Notary => ([],   tt, [], [Sign (staple msg)])
-    | Client => ([msg], tt, [], [Verify Notary msg])
+    | Notary => ([],   tt, [], [Sign secret_key (staple msg)])
+    | Client => ([msg], tt, [], [Verify (sigPK secret_key) msg])
   end.
   Definition inputHandler (_:Name) (_:unit) (d:Data)
     : (list string * Data * list (Name * string) * list (@cryptoEvent Name))
-    := ([], d, [], [])
+    := ([], d, [], [Random secret_key])
   .
+  
 
   Global Instance Notary_MultiParams : MultiParams Notary_BaseParams :=
     {
@@ -77,7 +82,7 @@ Section Notary.
 
   Lemma signed_magic : forall st trace,
     refl_trans_n1_trace step_m step_m_init st trace ->
-    forall n s, In (n, Sign s) (nwCrypto st) -> magical s.
+    forall n s, In (n, Sign secret_key s) (nwCrypto st) -> magical s.
     intros until 1.
     remember step_m_init as s0 in H.
     induction H; [subst; unfold step_m_init; simpl; intros; exfalso; auto|].
@@ -116,8 +121,14 @@ Section Notary.
         destruct H3; intuition; 
         injection H3; clear H3; intros; subst; simpl in *; [exfalso; auto|].
       eapply signed_magic; [eauto|].
-      edestruct H6; [left;eauto|discriminate|].
-      replace s with (pBody p) by intuition; eapply H3.
+      intuition. rewrite H3 in *; clear H3.
+      edestruct H6; clear H6.
+      - left. eauto.
+      - right. admit. (* TODO: do not sign anything before random number generation succeeds. Then from right of H2 (left is constructor mismatch). *)
+      - intro. destruct H1; [discriminate|]. admit. (* TODO: prove that secret key is never leaked. by induction on steps. *)
+      - discriminate H1.
+      - admit. (* Anomaly: Signature and its instance do not match. Please report. *)
+      (* replace ? (pBody p) by intuition; eapply H3.*)
    } { 
     unfold net_handlers in *; subst; simpl in *.
     destruct H3; intuition; discriminate.
