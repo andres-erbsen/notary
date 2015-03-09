@@ -13,14 +13,20 @@ Class Params  :=
     name : Type ;
     name_eq_dec : EqDec name eq ;
 
-    v : Type ;
-    v_eq_dec : EqDec v eq ;
+    msg : Type ;
+    msg_eq_dec : EqDec msg eq ;
 
-    kdf : v -> v -> v (* key -> seed -> new key *) ;
+    box_sk : Type ;
+    box_sk_eq_dec : EqDec box_sk eq ;
 
-    box_keygen : v -> v (* sk -> pk *) ;
-    box : v -> v -> v -> v (* sk -> pk -> message -> ciphertext *) ;
-    box_open : v -> v -> v -> v (* sk -> pk -> ciphertext -> message *)
+    box_pk : Type ;
+    box_pk_eq_dec : EqDec box_pk eq ;
+
+    box_ct : Type ;
+
+    box_keygen : box_sk -> box_pk ;
+    box : box_sk -> box_pk -> msg -> box_ct ;
+    box_open : box_sk -> box_pk -> box_ct -> msg
   }.
 
 
@@ -53,13 +59,10 @@ Section Expr.
     }
   Defined.
 
-  Inductive expr (T:Type) : Type := 
-  | Const : T -> expr T
-  | External : forall {argts} (f:@funcType argts T) (args:hlist (@expr) argts), expr T
+  Inductive expr : Type -> Type := 
+  | Const : forall {T: Type}, T -> expr T
+  | External : forall {T: Type} {argts} (f:@funcType argts T) (args:hlist (@expr) argts), expr T
   .
-
-  Implicit Arguments Const [T].
-  Implicit Arguments External [T argts].
 
   Fixpoint eval
     {T:Type}
@@ -68,9 +71,10 @@ Section Expr.
     : T
     .
     refine (match e with
-    | Const v => v
-    | External f args => call f (hmap eval args)
+    | Const x => x
+    | External f args => call f (hmap _ args)
     end).
+    unfold id. intros. apply eval; eauto.
   Defined.
 
   Section Ops.
@@ -84,19 +88,33 @@ Section Expr.
   Example evalOne : eval ((unop S) (Const 0)) = 1. reflexivity. Qed.
   Example evalTwoPlusThree : eval ((binop plus) ((unop S) (Const 1)) (Const 3)) = 5. reflexivity. Qed.
 
-
   Definition hIn {A:Type} {B:A->Type} {ls:list A} {t:A} (v:B t) (L:hlist B ls) : Prop :=
     exists (pf_m:@member A t ls), @hget A B t ls L pf_m = v.
 
-  Inductive eIn {T:Type} (v:T) : @expr T -> Prop :=
-  | inAtom : eIn v (Const v)
-  | inArgs : forall argts f args, (exists e, hIn e args /\ eIn v e) -> eIn v (@External T argts f args)
+  Inductive eIND : forall {V T C:Type}, V -> expr T -> expr C -> Prop :=
+  | INDConst : forall {V T C} (v:V) (ctx:expr C) (t:T), eIND v (Const t) ctx
+  | INDArgs : forall {V T C} (v:V) (ctx:expr C) argts f args,
+          (forall W (e:expr W), hIn e args -> eIND v e ctx)
+          -> eIND v (@External T argts f args) ctx
+  (* FIXME: key is not Const. What is it? *)
+  | INDBoxKey : forall {V C} (v:V) (ctx:expr C) sk pk m,
+          eIND v (terop box (Const sk) pk m) ctx
+  | INDBoxMessage : forall {V C} (v:V) (ctx:expr C) sk pk m,
+          eIND sk ctx ctx ->
+          eIND v (terop box (Const sk) pk m) ctx
+  | INDBoxOpen : forall {V C} (v:V) sk pk sk' pk' m (ctx:expr C),
+          eIND v m ctx ->
+          eIND v (terop box_open sk pk' (terop box sk' pk m)) ctx
   .
+
+
 End Expr.
 
 Class Handlers `(P : Params) :=
   {
-    init : name -> v -> state; (* v is random seed *)
-    net_handler :   name -> state -> v     -> (state * expr v * list output) ;
-    input_handler : name -> state -> input -> (state * expr v * list output)
+    (* XXX: expr should take in previous state as expr, not evaled
+      because we want to track taint across state changes *)
+    init : name -> msg -> state; (* v is random seed *)
+    net_handler :   name -> state -> msg   -> (state * expr msg * list output) ;
+    input_handler : name -> state -> input -> (state * expr msg * list output)
   }.
