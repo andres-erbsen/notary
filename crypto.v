@@ -24,14 +24,14 @@ Class Params  :=
 
     box_ct : Type ;
 
+    box_new : name -> nat -> box_sk ;
     box_keygen : box_sk -> box_pk ;
     box : box_sk -> box_pk -> msg -> box_ct ;
-    box_open : box_sk -> box_pk -> box_ct -> msg
+    box_open : box_sk -> box_pk -> box_ct -> option msg
   }.
 
 
 Section Expr.
-  Context `{params : Params}.
 
   Fixpoint funcType
     (argts:list Type)
@@ -91,28 +91,31 @@ Section Expr.
   Definition hIn {A:Type} {B:A->Type} {ls:list A} {t:A} (v:B t) (L:hlist B ls) : Prop :=
     exists (pf_m:@member A t ls), @hget A B t ls L pf_m = v.
 
+End Expr.
+
+
+Section IND.
+  Context `{params : Params}.
+
   Inductive eIND : forall {V T C:Type}, V -> expr T -> expr C -> Prop :=
   | INDConst : forall {V T C} (v:V) (ctx:expr C) (t:T), eIND v (Const t) ctx
   | INDArgs : forall {V T C} (v:V) (ctx:expr C) argts f args,
           (forall W (e:expr W), hIn e args -> eIND v e ctx)
           -> eIND v (@External T argts f args) ctx
-  (* FIXME: key is not Const. What is it? *)
-  | INDBoxKey : forall {V C} (v:V) (ctx:expr C) sk pk m,
-          eIND v (terop box (Const sk) pk m) ctx
-  | INDBoxMessage : forall {V C} (v:V) (ctx:expr C) sk pk m,
-          eIND sk ctx ctx ->
-          eIND v (terop box (Const sk) pk m) ctx
+  | INDBoxKey : forall {V C} (v:V) (ctx:expr C) nm idx pk m,
+          eIND v (terop box (binop box_new nm idx) pk m) ctx
+  | INDBoxMessage : forall {V C} (v:V) (ctx:expr C) nm idx pk m,
+          eIND (binop box_new nm idx) ctx ctx ->
+          eIND v (terop box (binop box_new nm idx) pk m) ctx
   | INDBoxOpen : forall {V C} (v:V) sk pk sk' pk' m (ctx:expr C),
           eIND v m ctx ->
           eIND v (terop box_open sk pk' (terop box sk' pk m)) ctx
   .
-
-
-End Expr.
+End IND.
 
 Class Handlers `(P : Params) :=
   {
-    (* XXX: expr should take in previous state as expr, not evaled
+    (* TODO: expr should take in previous state as expr, not evaled
       because we want to track taint across state changes *)
     init : name -> msg -> state; (* v is random seed *)
     net_handler :   name -> state -> msg   -> (state * expr msg * list output) ;
