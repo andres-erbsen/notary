@@ -1,5 +1,9 @@
 Require Import List.
+Require Import String.
 Require Import DepList.
+Require Import Coq.FSets.FMapInterface.
+Require Import Coq.Structures.DecidableType.
+Require Import Coq.FSets.FMapFacts.
 Import ListNotations.
 
 Require Import Coq.Classes.EquivDec.
@@ -30,51 +34,89 @@ Class Params  :=
     box_open : box_sk -> box_pk -> box_ct -> option msg
   }.
 
+Module string_as_DT <: DecidableType.
+  Definition t := string.
+  Definition eq := @eq t.
+  Definition eq_refl := @eq_refl t.
+  Definition eq_sym := @eq_sym t.
+  Definition eq_trans := @eq_trans t.
+  Definition eq_dec := string_dec.
+End string_as_DT.
 
-Section Expr.
+Fixpoint funcType
+  (argts:list Type)
+  (T:Type)
+  {struct argts}
+  :=
+  match argts with
+    | nil => T
+    | cons t argts' => t -> (funcType argts' T)
+  end
+.
 
-  Fixpoint funcType
-    (argts:list Type)
-    (T:Type)
-    {struct argts}
-    :=
-    match argts with
-      | nil => T
-      | cons t argts' => t -> (funcType argts' T)
-    end
+Fixpoint call {T:Type}
+  {argts}
+  (f:@funcType argts T)
+  (args : hlist id argts)
+  : T
   .
+  inversion args. {
+    rewrite <- H in f; apply f.
+  } {
+    eapply call; [|eauto].
+    rewrite <- H in f; apply f.
+    unfold id in X; apply X.
+  }
+Defined.
 
-  Fixpoint call {T:Type}
-    {argts}
-    (f:@funcType argts T)
-    (args : hlist id argts)
-    : T
-    .
-    inversion args. {
-      rewrite <- H in f; apply f.
-    } {
-      eapply call; [|eauto].
-      rewrite <- H in f; apply f.
-      unfold id in X; apply X.
-    }
-  Defined.
+Module Expr (StringMap:FMapInterface.WSfun string_as_DT).
+  Definition params := StringMap.t Type.
+  Module MapFacts := WFacts_fun string_as_DT StringMap.
+  Module MapProperties := WProperties_fun string_as_DT StringMap.
+  Import StringMap.
+  Import MapFacts.
+  Import MapProperties.
+  Implicit Arguments empty [elt].
+  Implicit Arguments add [elt].
 
-  Inductive expr : Type -> Type := 
-  | Const : forall {T: Type}, T -> expr T
-  | External : forall {T: Type} {argts} (f:@funcType argts T) (args:hlist (@expr) argts), expr T
+  Definition consistent (l r:params) : Prop :=
+    forall p vl vr, MapsTo p vl l -> MapsTo p vr r -> vl = vr.
+  Fixpoint consistent' (ms:list params) := match ms with
+  | nil => True
+  | m::ms' => (forall m', List.In m' ms' -> consistent m m')
+              /\
+              consistent' ms'
+  end.
+
+  Definition merge := fold (@add Type).
+  Definition merge' := fold_right merge empty.
+
+  Inductive expr : params -> Type -> Type := 
+  | Const : forall {T:Type}, T -> expr empty T
+  | Param : forall {T:Type} V n, expr (add n V empty) T
+  | External : forall {T: Type}
+      {argspecs:list (params * Type)}
+      (f:funcType (List.map snd argspecs) T)
+      (args:hlist (uncurry (@expr)) argspecs),
+    consistent' (List.map fst argspecs) ->
+    expr (merge' (List.map fst argspecs)) T
   .
 
   Fixpoint eval
     {T:Type}
-    (e:@expr T)
+    (e:@expr nil T)
     {struct e}
     : T
     .
     refine (match e with
     | Const x => x
-    | External f args => call f (hmap _ args)
+    | Param T n => _
+    | @External T' argtypes f argparams args => _
     end).
-    unfold id. intros. apply eval; eauto.
+    intro; auto. (* no variables in expr [] *)
+    assert (T = T) by admit; subst.
+    assert (argparams = nil) by admit; subst.
+    simpl. apply eval, e.
   Defined.
 
   Section Ops.
